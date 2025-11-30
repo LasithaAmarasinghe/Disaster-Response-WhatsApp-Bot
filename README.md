@@ -293,10 +293,6 @@ For real disaster response operations:
 
 ---
 
-**Made with ❤️ for Sri Lanka's Disaster Response Community** 🇱🇰
-
-*Stay safe, help others, coordinate better.*
-
 ## 🔒 Security Notes
 
 - Keep your `.env` file secure (never commit to git)
@@ -327,4 +323,6 @@ For urgent disaster response coordination needs, ensure:
 
 ---
 
-**Made for Sri Lanka's Disaster Response Community** 🇱🇰
+**Made with ❤️ for Sri Lanka's Disaster Response Community** 🇱🇰
+
+*Stay safe, help others, coordinate better.*�🇰
