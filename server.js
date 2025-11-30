@@ -1,0 +1,359 @@
+import express from 'express';
+import fs from 'fs/promises';
+import path from 'path';
+
+const app = express();
+const PORT = 3000;
+
+app.use(express.json());
+
+// Store reports in memory and file
+let reports = [];
+
+// Load existing reports on startup
+async function loadExistingReports() {
+    try {
+        const reportsDir = path.join(process.cwd(), 'api-reports');
+        const date = new Date().toISOString().split('T')[0];
+        const filename = path.join(reportsDir, `reports-${date}.json`);
+        
+        const data = await fs.readFile(filename, 'utf8');
+        reports = JSON.parse(data);
+        console.log(`✓ Loaded ${reports.length} existing reports from ${filename}`);
+    } catch (err) {
+        console.log('No existing reports found, starting fresh');
+    }
+}
+
+// Endpoint to receive disaster reports
+app.post('/api/disaster-reports', async (req, res) => {
+    try {
+        const report = req.body;
+        
+        console.log('\n📨 New Report Received:');
+        console.log(`  ID: ${report.reportId}`);
+        console.log(`  Type: ${report.requestType}`);
+        console.log(`  Urgency: ${report.urgency}`);
+        console.log(`  Location: ${report.primaryLocation || 'Not specified'}`);
+        console.log(`  Contact: ${report.primaryContact || 'Not specified'}`);
+        console.log(`  From: ${report.source.groupName}`);
+        console.log(`  Message: ${report.originalMessage.substring(0, 100)}...`);
+        
+        // Add to memory
+        reports.push(report);
+        
+        // Save to file
+        const reportsDir = path.join(process.cwd(), 'api-reports');
+        await fs.mkdir(reportsDir, { recursive: true });
+        
+        const date = new Date().toISOString().split('T')[0];
+        const filename = path.join(reportsDir, `reports-${date}.json`);
+        
+        await fs.writeFile(filename, JSON.stringify(reports, null, 2));
+        
+        res.status(200).json({
+            success: true,
+            message: 'Report received successfully',
+            reportId: report.reportId
+        });
+    } catch (error) {
+        console.error('Error processing report:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Get all reports
+app.get('/api/disaster-reports', (req, res) => {
+    console.log(`📊 Dashboard requested reports. Sending ${reports.length} reports`);
+    res.json({
+        total: reports.length,
+        reports: reports
+    });
+});
+
+// Delete a report
+app.delete('/api/disaster-reports/:reportId', (req, res) => {
+    const reportId = req.params.reportId;
+    const initialLength = reports.length;
+    reports = reports.filter(r => r.reportId !== reportId);
+    
+    if (reports.length < initialLength) {
+        console.log(`🗑️  Deleted report: ${reportId}`);
+        res.json({ success: true, message: 'Report deleted' });
+    } else {
+        res.status(404).json({ success: false, message: 'Report not found' });
+    }
+});
+
+// Dashboard HTML
+app.get('/', (req, res) => {
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Disaster Response Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        
+        .header { background: white; padding: 30px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .header h1 { color: #2d3748; font-size: 32px; margin-bottom: 5px; }
+        .header p { color: #718096; font-size: 14px; }
+        .header .last-update { float: right; color: #a0aec0; font-size: 13px; }
+        
+        .controls { background: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; display: flex; gap: 15px; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .controls button { background: #667eea; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.3s; }
+        .controls button:hover { background: #5a67d8; transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+        .controls select { padding: 12px; border-radius: 8px; border: 2px solid #e2e8f0; font-size: 14px; cursor: pointer; }
+        .controls input { padding: 12px; border-radius: 8px; border: 2px solid #e2e8f0; font-size: 14px; flex: 1; }
+        
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 20px; }
+        .stat-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .stat-card h3 { color: #718096; font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+        .stat-card .number { font-size: 40px; font-weight: bold; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .stat-card .icon { font-size: 32px; float: right; opacity: 0.3; }
+        
+        .reports-container { background: white; border-radius: 12px; padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .reports-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #e2e8f0; }
+        .reports-header h2 { color: #2d3748; font-size: 20px; }
+        
+        .report { background: #f7fafc; padding: 20px; margin-bottom: 15px; border-radius: 10px; border-left: 5px solid #cbd5e0; transition: all 0.3s; }
+        .report:hover { transform: translateX(5px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .urgency-high { border-left-color: #f56565; background: #fff5f5; }
+        .urgency-medium { border-left-color: #ed8936; background: #fffaf0; }
+        .urgency-low { border-left-color: #48bb78; background: #f0fff4; }
+        
+        .report-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .report-id { font-family: 'Courier New', monospace; color: #718096; font-size: 12px; }
+        .delete-btn { background: #fc8181; color: white; border: none; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 16px; transition: all 0.3s; display: flex; align-items: center; justify-content: center; }
+        .delete-btn:hover { background: #f56565; transform: scale(1.1); }
+        
+        .badges { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 15px; }
+        .badge { display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+        .badge-food { background: #fbd38d; color: #744210; }
+        .badge-water { background: #81e6d9; color: #234e52; }
+        .badge-shelter { background: #fbb6ce; color: #702459; }
+        .badge-medical { background: #fc8181; color: #742a2a; }
+        .badge-rescue { background: #f56565; color: white; }
+        .badge-transport { background: #90cdf4; color: #2c5282; }
+        .badge-clothing { background: #d6bcfa; color: #44337a; }
+        .badge-information { background: #b794f4; color: #44337a; }
+        .badge-general { background: #cbd5e0; color: #2d3748; }
+        .urgency-badge { background: #e2e8f0; color: #4a5568; }
+        .urgency-badge.high { background: #feb2b2; color: #742a2a; }
+        .urgency-badge.medium { background: #fbd38d; color: #744210; }
+        .urgency-badge.low { background: #9ae6b4; color: #22543d; }
+        
+        .report-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 15px; }
+        .detail-item { display: flex; align-items: start; gap: 10px; }
+        .detail-item .icon { font-size: 18px; margin-top: 2px; }
+        .detail-item .content { flex: 1; }
+        .detail-item .label { font-size: 11px; color: #a0aec0; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin-bottom: 3px; }
+        .detail-item .value { color: #2d3748; font-weight: 600; word-break: break-word; }
+        
+        .message-box { background: white; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin-top: 15px; }
+        .message-box .label { font-size: 11px; color: #a0aec0; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin-bottom: 8px; }
+        .message-box .text { color: #4a5568; line-height: 1.6; font-size: 14px; }
+        
+        .timestamp { text-align: right; color: #a0aec0; font-size: 12px; margin-top: 10px; }
+        
+        .empty-state { text-align: center; padding: 60px 20px; color: #a0aec0; }
+        .empty-state .icon { font-size: 64px; margin-bottom: 20px; opacity: 0.5; }
+        .empty-state p { font-size: 18px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚨 Disaster Response Dashboard</h1>
+            <p>Real-time monitoring of disaster relief requests from WhatsApp groups</p>
+            <span class="last-update" id="lastUpdate">Last updated: Never</span>
+        </div>
+        
+        <div class="controls">
+            <button onclick="loadReports()">🔄 Refresh</button>
+            <select id="filterType" onchange="filterReports()">
+                <option value="all">All Types</option>
+                <option value="food">Food</option>
+                <option value="water">Water</option>
+                <option value="shelter">Shelter</option>
+                <option value="medical">Medical</option>
+                <option value="rescue">Rescue</option>
+                <option value="transport">Transport</option>
+            </select>
+            <select id="filterUrgency" onchange="filterReports()">
+                <option value="all">All Urgency</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+            </select>
+            <input type="text" id="searchBox" placeholder="Search by location, contact, or message..." oninput="filterReports()">
+        </div>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <span class="icon">📊</span>
+                <h3>Total Reports</h3>
+                <div class="number" id="total">0</div>
+            </div>
+            <div class="stat-card">
+                <span class="icon">🚨</span>
+                <h3>High Urgency</h3>
+                <div class="number" id="high">0</div>
+            </div>
+            <div class="stat-card">
+                <span class="icon">⏳</span>
+                <h3>Pending</h3>
+                <div class="number" id="pending">0</div>
+            </div>
+            <div class="stat-card">
+                <span class="icon">🍚</span>
+                <h3>Food Requests</h3>
+                <div class="number" id="food">0</div>
+            </div>
+            <div class="stat-card">
+                <span class="icon">🏠</span>
+                <h3>Shelter Requests</h3>
+                <div class="number" id="shelter">0</div>
+            </div>
+            <div class="stat-card">
+                <span class="icon">🆘</span>
+                <h3>Rescue Requests</h3>
+                <div class="number" id="rescue">0</div>
+            </div>
+        </div>
+        
+        <div class="reports-container">
+            <div class="reports-header">
+                <h2>Recent Reports</h2>
+                <span id="reportCount">0 reports</span>
+            </div>
+            <div id="reports"></div>
+        </div>
+    </div>
+    <script>
+        let allReports = [];
+        
+        function loadReports() {
+            console.log('Loading reports...');
+            fetch('/api/disaster-reports')
+                .then(r => r.json())
+                .then(data => {
+                    console.log('Received data:', data);
+                    console.log('Number of reports:', data.reports.length);
+                    allReports = data.reports;
+                    updateStats(data.reports);
+                    filterReports();
+                    document.getElementById('lastUpdate').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+                })
+                .catch(err => {
+                    console.error('Error loading reports:', err);
+                    document.getElementById('reports').innerHTML = '<div class="empty-state"><div class="icon">❌</div><p>Error loading reports: ' + err.message + '</p></div>';
+                });
+        }
+        
+        function updateStats(reports) {
+            document.getElementById('total').textContent = reports.length;
+            document.getElementById('high').textContent = reports.filter(r => r.urgency === 'high').length;
+            document.getElementById('pending').textContent = reports.filter(r => r.status === 'pending').length;
+            document.getElementById('food').textContent = reports.filter(r => r.requestType === 'food').length;
+            document.getElementById('shelter').textContent = reports.filter(r => r.requestType === 'shelter').length;
+            document.getElementById('rescue').textContent = reports.filter(r => r.requestType === 'rescue').length;
+        }
+        
+        function filterReports() {
+            const typeFilter = document.getElementById('filterType').value;
+            const urgencyFilter = document.getElementById('filterUrgency').value;
+            const searchTerm = document.getElementById('searchBox').value.toLowerCase();
+            
+            let filtered = allReports.filter(r => {
+                const matchType = typeFilter === 'all' || r.requestType === typeFilter;
+                const matchUrgency = urgencyFilter === 'all' || r.urgency === urgencyFilter;
+                const matchSearch = searchTerm === '' || 
+                    (r.primaryLocation && r.primaryLocation.toLowerCase().includes(searchTerm)) ||
+                    (r.primaryContact && r.primaryContact.includes(searchTerm)) ||
+                    r.originalMessage.toLowerCase().includes(searchTerm);
+                return matchType && matchUrgency && matchSearch;
+            });
+            
+            displayReports(filtered);
+        }
+        
+        function deleteReport(reportId) {
+            if (!confirm('Are you sure you want to delete this report?')) return;
+            
+            fetch('/api/disaster-reports/' + reportId, { method: 'DELETE' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        loadReports();
+                    } else {
+                        alert('Failed to delete report');
+                    }
+                });
+        }
+        
+        function displayReports(reports) {
+            console.log('Displaying reports:', reports.length);
+            document.getElementById('reportCount').textContent = reports.length + ' report' + (reports.length !== 1 ? 's' : '');
+            
+            if (reports.length === 0) {
+                document.getElementById('reports').innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>No reports found</p></div>';
+                return;
+            }
+            
+            console.log('Generating HTML for reports...');
+            
+            const reportsHtml = reports.reverse().map((r, idx) => {
+                const escapedMsg = r.originalMessage.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                return '<div class="report urgency-' + r.urgency + '" data-report-id="' + r.reportId + '">' +
+                    '<div class="report-header">' +
+                        '<div class="badges">' +
+                            '<span class="badge badge-' + r.requestType + '">' + r.requestType + '</span>' +
+                            '<span class="badge urgency-badge ' + r.urgency + '">' + r.urgency + ' urgency</span>' +
+                        '</div>' +
+                        '<div style="display: flex; align-items: center; gap: 10px;">' +
+                            '<span class="report-id">' + r.reportId + '</span>' +
+                            '<button class="delete-btn" data-report-id="' + r.reportId + '" title="Delete report">✕</button>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="report-details">' +
+                        '<div class="detail-item"><span class="icon">📍</span><div class="content"><div class="label">Location</div><div class="value">' + (r.primaryLocation || 'Not specified') + '</div></div></div>' +
+                        '<div class="detail-item"><span class="icon">📞</span><div class="content"><div class="label">Contact</div><div class="value">' + (r.primaryContact || 'Not specified') + '</div></div></div>' +
+                        '<div class="detail-item"><span class="icon">👤</span><div class="content"><div class="label">Reporter</div><div class="value">' + r.source.senderName + '</div></div></div>' +
+                        '<div class="detail-item"><span class="icon">💬</span><div class="content"><div class="label">Source</div><div class="value">' + r.source.groupName + '</div></div></div>' +
+                    '</div>' +
+                    '<div class="message-box"><div class="label">Original Message</div><div class="text">' + escapedMsg + '</div></div>' +
+                    '<div class="timestamp">⏰ ' + new Date(r.messageTimestamp).toLocaleString() + '</div>' +
+                '</div>';
+            }).join('');
+            
+            document.getElementById('reports').innerHTML = reportsHtml;
+            
+            // Add click handlers for delete buttons
+            document.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    deleteReport(this.getAttribute('data-report-id'));
+                });
+            });
+        }
+        
+        loadReports();
+        setInterval(loadReports, 5000);
+    </script>
+</body>
+</html>`);
+});
+
+app.listen(PORT, async () => {
+    console.log(`\n✓ Disaster Response API Server running on http://localhost:${PORT}`);
+    console.log(`  Dashboard: http://localhost:${PORT}`);
+    console.log(`  API Endpoint: http://localhost:${PORT}/api/disaster-reports\n`);
+    
+    await loadExistingReports();
+});
