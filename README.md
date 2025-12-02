@@ -2,6 +2,11 @@
 
 A complete WhatsApp monitoring and disaster response management system designed to track emergency requests from WhatsApp groups during floods and landslides in Sri Lanka.
 
+<p align="center">
+  <img src="https://github.com/LasithaAmarasinghe/Disaster-Response-WhatsApp-Bot/blob/main/disaster response bot.gif" alt="Demo GIF" />
+</p>
+
+
 ## 🎯 Purpose
 
 During disasters like floods and landslides in Sri Lanka, people post urgent needs in WhatsApp groups. This system provides:
