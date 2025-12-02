@@ -63,6 +63,7 @@ API_KEY=your_api_key_here
 
 # Groups to monitor (comma-separated, partial names work)
 # Leave empty to monitor ALL groups
+```
 ## 🏃 Usage
 
 ### Start the System
@@ -324,5 +325,3 @@ For urgent disaster response coordination needs, ensure:
 ---
 
 **Made with ❤️ for Sri Lanka's Disaster Response Community** 🇱🇰
-
-*Stay safe, help others, coordinate better.*�🇰
